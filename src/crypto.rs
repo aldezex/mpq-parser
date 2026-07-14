@@ -4,6 +4,7 @@ pub const MPQ_HASH_TABLE_OFFSET: u32 = 0;
 pub const MPQ_HASH_NAME_A: u32 = 1;
 pub const MPQ_HASH_NAME_B: u32 = 2;
 pub const MPQ_HASH_FILE_KEY: u32 = 3;
+pub const MPQ_HASH_KEY2_MIX: u32 = 4;
 
 pub fn build_crypt_table() -> [u32; CRYPT_TABLE_SIZE] {
     let mut table = [0u32; CRYPT_TABLE_SIZE];
@@ -58,7 +59,9 @@ pub fn decrypt(data: &[u8], mut key: u32, crypt_table: &[u32; CRYPT_TABLE_SIZE])
     for chunk in data.chunks(4) {
         let encrypted = u32::from_le_bytes(chunk.try_into().unwrap());
 
-        seed = seed.wrapping_add(crypt_table[(key & 0xFF) as usize]);
+        let table_index = ((MPQ_HASH_KEY2_MIX << 8) as usize).wrapping_add((key & 0xFF) as usize);
+        seed = seed.wrapping_add(crypt_table[table_index]);
+
         let decrypted = encrypted ^ key.wrapping_add(seed);
         result.push(decrypted);
 
