@@ -34,6 +34,20 @@ fn next_seed(seed: u32) -> u32 {
     temp as u32
 }
 
+/// Computes one of MPQ's multi-purpose hashes for a given string, using
+/// the algorithm described in the MPQ format specification.
+///
+/// The same algorithm produces different, unrelated results depending on
+/// `hash_type`, which selects a distinct 256-value "zone" within the
+/// crypt table:
+/// - `MPQ_HASH_TABLE_OFFSET` (0): index of a file name within the hash table.
+/// - `MPQ_HASH_NAME_A` (1) / `MPQ_HASH_NAME_B` (2): the two independent
+///   hashes stored in a `HashTableEntry`, used together to avoid collisions.
+/// - `MPQ_HASH_FILE_KEY` (3): decryption key for a file or table. For
+///   example, the hash table itself is decrypted using the key
+///   `hash_string("(hash table)", MPQ_HASH_FILE_KEY, &crypt_table)`.
+///
+/// `text` is uppercased internally (MPQ hashing is case-insensitive).
 pub fn hash_string(text: &str, hash_type: u32, crypt_table: &[u32; CRYPT_TABLE_SIZE]) -> u32 {
     let mut seed1: u32 = 0x7FED_7FED;
     let mut seed2: u32 = 0xEEEE_EEEE;
@@ -52,6 +66,18 @@ pub fn hash_string(text: &str, hash_type: u32, crypt_table: &[u32; CRYPT_TABLE_S
     seed1
 }
 
+/// Decrypts a block of MPQ data (e.g. the raw hash table or block table
+/// bytes) in place, returning the decrypted content as `u32` words.
+///
+/// `key` must be the value returned by [`hash_string`] with
+/// `MPQ_HASH_FILE_KEY`, computed from the name MPQ uses to identify the
+/// thing being decrypted (e.g. `"(hash table)"`, `"(block table)"`, or a
+/// file's own name).
+///
+/// Internally, this is a stream cipher: `key` evolves after each 4-byte
+/// block, mixed with a distinct region of the crypt table
+/// (`MPQ_HASH_KEY2_MIX`) reserved specifically for decryption, separate
+/// from the regions used by [`hash_string`].
 pub fn decrypt(data: &[u8], mut key: u32, crypt_table: &[u32; CRYPT_TABLE_SIZE]) -> Vec<u32> {
     let mut seed: u32 = 0xEEEE_EEEE;
     let mut result = Vec::with_capacity(data.len() / 4);

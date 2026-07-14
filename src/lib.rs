@@ -1,41 +1,40 @@
-//! Parsing del contenedor MPQ para replays de StarCraft II.
+//! MPQ container parsing for StarCraft II replays.
 //!
-//! Un archivo `.SC2Replay` es un archivo MPQ envuelto en un `MPQUserData`
-//! header. Este módulo se encarga únicamente de la capa de contenedor:
-//! localizar el header MPQ real y sus tablas asociadas (hash table, block
-//! table). No interpreta todavía el contenido de los archivos internos
-//! (`replay.details`, `replay.tracker.events`, etc.) — eso vive en otro
-//! módulo más adelante.
+//! A `.SC2Replay` file is an MPQ archive wrapped in an `MPQUserData`
+//! header. This module handles only the container layer: locating the
+//! real MPQ header and its associated tables (hash table, block table).
+//! It does not yet interpret the contents of the internal files
+//! (`replay.details`, `replay.tracker.events`, etc.) — that lives in
+//! another module further down the line.
 pub mod crypto;
 pub mod hash;
 
-/// Errores que pueden ocurrir al parsear el contenedor MPQ de un replay.
+/// Errors that can occur while parsing the MPQ container of a replay.
 ///
-/// Se distingue entre "el archivo es demasiado corto para contener el
-/// campo que buscamos" y "la signature no es la esperada", porque son
-/// fallos con causas y remedios distintos para quien use esta librería.
+/// A distinction is made between "the file is too short to contain the
+/// field we're looking for" and "the signature isn't the expected one",
+/// since these are failures with different causes and remedies for
+/// whoever uses this library.
 #[derive(Debug, thiserror::Error)]
 pub enum MpqParseError {
-    #[error(
-        "se necesitaban {needed} bytes en offset {offset}, pero solo hay {available} disponibles"
-    )]
+    #[error("needed {needed} bytes at offset {offset}, but only {available} are available")]
     UnexpectedEof {
         needed: usize,
         offset: usize,
         available: usize,
     },
-    #[error("signature inválida: se esperaba {expected:02x?}, se encontró {found:02x?}")]
+    #[error("invalid signature: expected {expected:02x?}, found {found:02x?}")]
     InvalidSignature { expected: [u8; 4], found: [u8; 4] },
 }
 
-/// Resultado corto para este módulo.
+/// Short-hand result type for this module.
 pub type Result<T> = std::result::Result<T, MpqParseError>;
 
-// --- Constantes de layout ---------------------------------------------
+// --- Layout constants ---------------------------------------------
 //
-// Nombradas explícitamente en vez de usar números mágicos en los rangos
-// de slice. Los offsets son relativos al inicio de cada estructura, no
-// al inicio del archivo.
+// Named explicitly instead of using magic numbers in slice ranges.
+// Offsets are relative to the start of each structure, not to the
+// start of the file.
 
 const USER_DATA_SIGNATURE: [u8; 4] = *b"MPQ\x1b";
 const MPQ_HEADER_SIGNATURE: [u8; 4] = *b"MPQ\x1a";
@@ -59,13 +58,13 @@ mod header_offsets {
     pub const BLOCK_TABLE_SIZE: (usize, usize) = (28, 32);
 }
 
-// --- Helpers de lectura --------------------------------------------------
+// --- Reading helpers --------------------------------------------------
 
-/// Lee un `u32` little-endian del rango `(start, end)` dentro de `bytes`.
+/// Reads a little-endian `u32` from the `(start, end)` range within `bytes`.
 ///
-/// Centraliza el patrón `slice -> try_into -> from_le_bytes` que se repetía
-/// en cada campo, y convierte un posible fallo de tamaño en un
-/// `MpqParseError` en vez de un panic.
+/// Centralizes the `slice -> try_into -> from_le_bytes` pattern that was
+/// repeated for every field, and turns a possible size failure into an
+/// `MpqParseError` instead of a panic.
 fn read_u32(bytes: &[u8], range: (usize, usize)) -> Result<u32> {
     let (start, end) = range;
     let slice = bytes.get(start..end).ok_or(MpqParseError::UnexpectedEof {
@@ -73,13 +72,13 @@ fn read_u32(bytes: &[u8], range: (usize, usize)) -> Result<u32> {
         offset: start,
         available: bytes.len().saturating_sub(start),
     })?;
-    // El slice viene garantizado en longitud 4 por el rango de la constante,
-    // así que este unwrap es seguro: si falla, es un bug interno nuestro,
-    // no una condición del archivo de entrada.
+    // The slice is guaranteed to have length 4 by the constant's range,
+    // so this unwrap is safe: if it fails, it's an internal bug on our
+    // side, not a condition of the input file.
     Ok(u32::from_le_bytes(slice.try_into().unwrap()))
 }
 
-/// Lee un `u16` little-endian del rango `(start, end)` dentro de `bytes`.
+/// Reads a little-endian `u16` from the `(start, end)` range within `bytes`.
 fn read_u16(bytes: &[u8], range: (usize, usize)) -> Result<u16> {
     let (start, end) = range;
     let slice = bytes.get(start..end).ok_or(MpqParseError::UnexpectedEof {
@@ -100,26 +99,26 @@ fn read_signature(bytes: &[u8], range: (usize, usize)) -> Result<[u8; 4]> {
     Ok(slice.try_into().unwrap())
 }
 
-// --- Tipos de dominio -----------------------------------------------------
+// --- Domain types -----------------------------------------------------
 
-/// Envoltorio `MPQUserData` que precede al header MPQ real en un replay
-/// de StarCraft II.
+/// `MPQUserData` wrapper that precedes the real MPQ header in a
+/// StarCraft II replay.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MpqUserDataHeader {
     pub user_data_size: u32,
-    /// Offset, relativo al inicio del archivo, donde empieza el header
-    /// MPQ real (`MPQ\x1A`).
+    /// Offset, relative to the start of the file, where the real MPQ
+    /// header (`MPQ\x1A`) begins.
     pub header_offset: u32,
     pub user_data_header_size: u32,
 }
 
 impl MpqUserDataHeader {
-    /// Parsea el `MPQUserData` a partir del inicio de un archivo de replay.
+    /// Parses the `MPQUserData` starting at the beginning of a replay file.
     ///
-    /// # Errores
-    /// Devuelve [`MpqParseError::InvalidSignature`] si los primeros 4 bytes
-    /// no son `MPQ\x1B`, y [`MpqParseError::UnexpectedEof`] si `bytes` es
-    /// demasiado corto.
+    /// # Errors
+    /// Returns [`MpqParseError::InvalidSignature`] if the first 4 bytes
+    /// aren't `MPQ\x1B`, and [`MpqParseError::UnexpectedEof`] if `bytes`
+    /// is too short.
     pub fn parse(bytes: &[u8]) -> Result<Self> {
         let signature = read_signature(bytes, user_data_offsets::SIGNATURE)?;
         if signature != USER_DATA_SIGNATURE {
@@ -137,31 +136,30 @@ impl MpqUserDataHeader {
     }
 }
 
-/// Header MPQ real (formato V1-V4). Solo se exponen los campos necesarios
-/// para localizar la hash table y la block table; el resto de la cabecera
-/// extendida de V4 (hi-block table, checksums) queda fuera de alcance por
-/// ahora.
+/// Real MPQ header (format V1-V4). Only the fields needed to locate the
+/// hash table and the block table are exposed; the rest of the V4
+/// extended header (hi-block table, checksums) is out of scope for now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MpqHeader {
     pub archive_size: u32,
     pub format_version: u16,
-    /// Offset de la hash table, relativo al inicio del header MPQ
-    /// (no al inicio del archivo).
+    /// Hash table offset, relative to the start of the MPQ header
+    /// (not to the start of the file).
     pub hash_table_position: u32,
-    /// Offset de la block table, relativo al inicio del header MPQ.
+    /// Block table offset, relative to the start of the MPQ header.
     pub block_table_position: u32,
-    /// Número de entradas de la hash table (no bytes).
+    /// Number of entries in the hash table (not bytes).
     pub hash_table_size: u32,
-    /// Número de entradas de la block table (no bytes).
+    /// Number of entries in the block table (not bytes).
     pub block_table_size: u32,
 }
 
 impl MpqHeader {
-    /// Parsea el header MPQ a partir del offset indicado por
+    /// Parses the MPQ header starting at the offset indicated by
     /// [`MpqUserDataHeader::header_offset`].
     ///
-    /// `bytes` debe ser el slice del archivo completo *a partir de* ese
-    /// offset (es decir, ya recortado por quien llama).
+    /// `bytes` must be the slice of the full file *starting from* that
+    /// offset (i.e. already trimmed by the caller).
     pub fn parse(bytes: &[u8]) -> Result<Self> {
         let signature = read_signature(bytes, header_offsets::SIGNATURE)?;
         if signature != MPQ_HEADER_SIGNATURE {
@@ -208,7 +206,7 @@ mod tests {
     #[test]
     fn rejects_invalid_signature() {
         let mut bytes = sample_user_data();
-        bytes[3] = 0x00; // corrompe la signature
+        bytes[3] = 0x00; // corrupt the signature
 
         let err = MpqUserDataHeader::parse(&bytes).unwrap_err();
         assert!(matches!(err, MpqParseError::InvalidSignature { .. }));
@@ -216,7 +214,7 @@ mod tests {
 
     #[test]
     fn reports_eof_instead_of_panicking() {
-        let bytes = [0x4d, 0x50, 0x51, 0x1b]; // solo la signature, sin el resto
+        let bytes = [0x4d, 0x50, 0x51, 0x1b]; // signature only, nothing else
         let err = MpqUserDataHeader::parse(&bytes).unwrap_err();
         assert!(matches!(err, MpqParseError::UnexpectedEof { .. }));
     }

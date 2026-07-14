@@ -8,6 +8,12 @@ pub struct HashTableEntry {
 }
 
 impl HashTableEntry {
+    /// Builds a single `HashTableEntry` from a 4-`u32` chunk of an already
+    /// decrypted hash table (see [`decrypt`]).
+    ///
+    /// The third word in the chunk packs both `language` and `platform`
+    /// into a single `u32`: `language` occupies the low 16 bits, `platform`
+    /// the high 16 bits.
     fn from_chunk(chunk: &[u32]) -> Self {
         let language = chunk[2] as u16;
         let platform = (chunk[2] >> 16) as u16;
@@ -22,6 +28,12 @@ impl HashTableEntry {
     }
 }
 
+/// Parses a fully decrypted hash table (see [`decrypt`]) into a list of
+/// typed [`HashTableEntry`] values.
+///
+/// `decrypted` is expected to contain `4 * hash_table_size` `u32` words —
+/// one 4-word chunk per entry, as produced by decrypting the raw hash
+/// table bytes located at `MpqHeader::hash_table_position`.
 pub fn parse_hash_table_entries(decrypted: &[u32]) -> Vec<HashTableEntry> {
     decrypted
         .chunks(4)
