@@ -7,6 +7,7 @@
 //! (`replay.details`, `replay.tracker.events`, etc.) — eso vive en otro
 //! módulo más adelante.
 pub mod crypto;
+pub mod hash;
 
 /// Errores que pueden ocurrir al parsear el contenedor MPQ de un replay.
 ///
