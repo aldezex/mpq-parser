@@ -6,6 +6,7 @@
 //! table). No interpreta todavía el contenido de los archivos internos
 //! (`replay.details`, `replay.tracker.events`, etc.) — eso vive en otro
 //! módulo más adelante.
+pub mod crypto;
 
 /// Errores que pueden ocurrir al parsear el contenedor MPQ de un replay.
 ///
