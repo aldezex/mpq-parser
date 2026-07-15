@@ -45,7 +45,7 @@ dependencies = [
 
 [[package]]
 name = "mpq-parser"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "flate2",
  "thiserror",
