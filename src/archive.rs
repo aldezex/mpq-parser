@@ -3,6 +3,7 @@ use crate::{
     crypto::{CRYPT_TABLE_SIZE, MPQ_HASH_NAME_A, MPQ_HASH_NAME_B, hash_string},
     hash::HashTableEntry,
 };
+use std::io::Read;
 
 pub fn find_file<'a>(
     name: &str,
@@ -25,4 +26,31 @@ pub fn find_file<'a>(
     }
 
     None
+}
+
+pub fn decompress_zlib(data: &[u8]) -> std::io::Result<Vec<u8>> {
+    let mut decoder = flate2::read::ZlibDecoder::new(data);
+    let mut result = Vec::new();
+    decoder.read_to_end(&mut result)?;
+    Ok(result)
+}
+
+pub fn extract_file(
+    replay_bytes: &[u8],
+    mpq_header_offset: u32,
+    block_entry: BlockTableEntry,
+) -> std::io::Result<Vec<u8>> {
+    let start = (mpq_header_offset + block_entry.file_pos) as usize;
+    let file_bytes = replay_bytes
+        .get(start..start + block_entry.compressed_size as usize)
+        .ok_or(std::io::Error::new(
+            std::io::ErrorKind::UnexpectedEof,
+            "Error getting file bytes",
+        ))?;
+
+    if block_entry.compressed_size == block_entry.uncompressed_size {
+        Ok(file_bytes.to_vec())
+    } else {
+        decompress_zlib(&file_bytes[1..])
+    }
 }
