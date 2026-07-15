@@ -5,6 +5,18 @@ use crate::{
 };
 use std::io::Read;
 
+/// Looks up a file by name within an MPQ archive, using its already
+/// decrypted hash table and block table.
+///
+/// Computes both name hashes (`MPQ_HASH_NAME_A` and `MPQ_HASH_NAME_B`) for
+/// `name` and scans `hash_entries` for a matching pair, skipping empty
+/// slots (`file_block_index == 0xFFFFFFFF`) explicitly rather than relying
+/// on the near-impossible chance that a real hash collides with that
+/// sentinel value.
+///
+/// Returns `None` if no entry matches, or if the matching entry's
+/// `file_block_index` falls outside `block_entries` (which would indicate
+/// a corrupt or unsupported archive).
 pub fn find_file<'a>(
     name: &str,
     hash_entries: &[HashTableEntry],
@@ -28,13 +40,49 @@ pub fn find_file<'a>(
     None
 }
 
-pub fn decompress_zlib(data: &[u8]) -> std::io::Result<Vec<u8>> {
+fn decompress_zlib(data: &[u8]) -> std::io::Result<Vec<u8>> {
     let mut decoder = flate2::read::ZlibDecoder::new(data);
     let mut result = Vec::new();
     decoder.read_to_end(&mut result)?;
     Ok(result)
 }
 
+fn decompress_bzip2(data: &[u8]) -> std::io::Result<Vec<u8>> {
+    let mut decoder = bzip2::read::BzDecoder::new(data);
+    let mut result = Vec::new();
+    decoder.read_to_end(&mut result)?;
+    Ok(result)
+}
+
+/// Decompresses a block of MPQ file data using the algorithm indicated by
+/// `compression_flag` (the first byte of a compressed MPQ file block).
+///
+/// Currently supported: `0x02` (zlib) and `0x10` (bzip2). Other MPQ
+/// compression methods (e.g. PKWare implode, LZMA) are not yet
+/// implemented and return an error.
+pub fn decompress(compression_flag: u8, data: &[u8]) -> std::io::Result<Vec<u8>> {
+    match compression_flag {
+        0x02 => decompress_zlib(data),
+        0x10 => decompress_bzip2(data),
+        other => Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("unsupported compression method: {:#04x}", other),
+        )),
+    }
+}
+
+/// Extracts and, if necessary, decompresses the contents of a single file
+/// stored inside an MPQ archive.
+///
+/// `mpq_header_offset` must be the offset of the MPQ header within
+/// `replay_bytes` (i.e. [`MpqUserDataHeader::header_offset`]), since
+/// `block_entry.file_pos` is relative to that header, not to the start
+/// of the file.
+///
+/// If `block_entry.compressed_size` equals `block_entry.uncompressed_size`,
+/// the file is stored as-is and is returned unchanged. Otherwise, the
+/// first byte of the stored data is a compression-method flag (see
+/// [`decompress`]), followed by the actual compressed stream.
 pub fn extract_file(
     replay_bytes: &[u8],
     mpq_header_offset: u32,
@@ -51,6 +99,6 @@ pub fn extract_file(
     if block_entry.compressed_size == block_entry.uncompressed_size {
         Ok(file_bytes.to_vec())
     } else {
-        decompress_zlib(&file_bytes[1..])
+        decompress(file_bytes[0], &file_bytes[1..])
     }
 }

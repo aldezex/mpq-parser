@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct HashTableEntry {
     pub file_path_hash_a: u32,
     pub file_path_hash_b: u32,
