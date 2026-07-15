@@ -3,7 +3,7 @@
 ///
 /// Retrieved by looking up a file's `file_block_index` in a
 /// [`crate::block::BlockTableEntry`].
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct BlockTableEntry {
     /// Offset of the file's data, relative to the start of the archive
     /// (i.e. relative to the MPQ header, same base as
