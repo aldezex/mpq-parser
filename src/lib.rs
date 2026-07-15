@@ -6,6 +6,7 @@
 //! It does not yet interpret the contents of the internal files
 //! (`replay.details`, `replay.tracker.events`, etc.) — that lives in
 //! another module further down the line.
+pub mod archive;
 pub mod block;
 pub mod crypto;
 pub mod hash;

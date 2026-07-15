@@ -1,5 +1,5 @@
 const CRYPT_TABLE_SEED: u32 = 0x0010_0001;
-const CRYPT_TABLE_SIZE: usize = 0x500;
+pub const CRYPT_TABLE_SIZE: usize = 0x500;
 pub const MPQ_HASH_TABLE_OFFSET: u32 = 0;
 pub const MPQ_HASH_NAME_A: u32 = 1;
 pub const MPQ_HASH_NAME_B: u32 = 2;
