@@ -40,16 +40,16 @@ pub fn find_file<'a>(
     None
 }
 
-fn decompress_zlib(data: &[u8]) -> std::io::Result<Vec<u8>> {
+fn decompress_zlib(data: &[u8], uncompressed_size_hint: usize) -> std::io::Result<Vec<u8>> {
     let mut decoder = flate2::read::ZlibDecoder::new(data);
-    let mut result = Vec::new();
+    let mut result = Vec::with_capacity(uncompressed_size_hint);
     decoder.read_to_end(&mut result)?;
     Ok(result)
 }
 
-fn decompress_bzip2(data: &[u8]) -> std::io::Result<Vec<u8>> {
+fn decompress_bzip2(data: &[u8], uncompressed_size_hint: usize) -> std::io::Result<Vec<u8>> {
     let mut decoder = bzip2::read::BzDecoder::new(data);
-    let mut result = Vec::new();
+    let mut result = Vec::with_capacity(uncompressed_size_hint);
     decoder.read_to_end(&mut result)?;
     Ok(result)
 }
@@ -57,13 +57,26 @@ fn decompress_bzip2(data: &[u8]) -> std::io::Result<Vec<u8>> {
 /// Decompresses a block of MPQ file data using the algorithm indicated by
 /// `compression_flag` (the first byte of a compressed MPQ file block).
 ///
+/// `uncompressed_size_hint` pre-sizes the output buffer — MPQ block
+/// entries always carry the exact uncompressed size, so callers going
+/// through [`extract_file`] get a single exact allocation instead of
+/// `read_to_end`'s repeated grow-and-copy cycles (a real cost for
+/// multi-hundred-KB event streams decompressed once per replay in batch
+/// workloads). Passing `0` degrades gracefully to the old
+/// grow-as-needed behavior; a wrong hint affects only performance,
+/// never correctness.
+///
 /// Currently supported: `0x02` (zlib) and `0x10` (bzip2). Other MPQ
 /// compression methods (e.g. PKWare implode, LZMA) are not yet
 /// implemented and return an error.
-pub fn decompress(compression_flag: u8, data: &[u8]) -> std::io::Result<Vec<u8>> {
+pub fn decompress(
+    compression_flag: u8,
+    data: &[u8],
+    uncompressed_size_hint: usize,
+) -> std::io::Result<Vec<u8>> {
     match compression_flag {
-        0x02 => decompress_zlib(data),
-        0x10 => decompress_bzip2(data),
+        0x02 => decompress_zlib(data, uncompressed_size_hint),
+        0x10 => decompress_bzip2(data, uncompressed_size_hint),
         other => Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             format!("unsupported compression method: {:#04x}", other),
@@ -99,6 +112,10 @@ pub fn extract_file(
     if block_entry.compressed_size == block_entry.uncompressed_size {
         Ok(file_bytes.to_vec())
     } else {
-        decompress(file_bytes[0], &file_bytes[1..])
+        decompress(
+            file_bytes[0],
+            &file_bytes[1..],
+            block_entry.uncompressed_size as usize,
+        )
     }
 }
