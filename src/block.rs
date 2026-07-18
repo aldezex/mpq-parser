@@ -36,6 +36,6 @@ impl BlockTableEntry {
 pub fn parse_block_table_entries(decrypted: &[u32]) -> Vec<BlockTableEntry> {
     decrypted
         .chunks(4)
-        .map(|chunk| BlockTableEntry::from_chunk(chunk))
+        .map(BlockTableEntry::from_chunk)
         .collect()
 }

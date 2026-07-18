@@ -101,9 +101,15 @@ pub fn extract_file(
     mpq_header_offset: u32,
     block_entry: BlockTableEntry,
 ) -> std::io::Result<Vec<u8>> {
-    let start = (mpq_header_offset + block_entry.file_pos) as usize;
-    let file_bytes = replay_bytes
-        .get(start..start + block_entry.compressed_size as usize)
+    // u64 arithmetic: with a corrupt header/block entry, u32 offset
+    // sums can wrap (release builds don't check overflow) and slice a
+    // wrong-but-valid range instead of erroring.
+    let start = mpq_header_offset as u64 + block_entry.file_pos as u64;
+    let end = start + block_entry.compressed_size as u64;
+    let file_bytes = usize::try_from(start)
+        .ok()
+        .zip(usize::try_from(end).ok())
+        .and_then(|(start, end)| replay_bytes.get(start..end))
         .ok_or(std::io::Error::new(
             std::io::ErrorKind::UnexpectedEof,
             "Error getting file bytes",
@@ -112,10 +118,42 @@ pub fn extract_file(
     if block_entry.compressed_size == block_entry.uncompressed_size {
         Ok(file_bytes.to_vec())
     } else {
-        decompress(
-            file_bytes[0],
-            &file_bytes[1..],
-            block_entry.uncompressed_size as usize,
-        )
+        // A compressed block is 1 flag byte + the stream; a zero-length
+        // block with a differing uncompressed_size is corrupt input,
+        // not a panic-worthy internal error.
+        let (flag, compressed) = file_bytes.split_first().ok_or(std::io::Error::new(
+            std::io::ErrorKind::UnexpectedEof,
+            "empty compressed block",
+        ))?;
+        decompress(*flag, compressed, block_entry.uncompressed_size as usize)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_file_with_zero_compressed_size_errors_instead_of_panicking() {
+        let entry = BlockTableEntry {
+            file_pos: 0,
+            compressed_size: 0,
+            uncompressed_size: 8,
+            flags: 0,
+        };
+        let result = extract_file(&[0u8; 16], 0, entry);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn extract_file_with_overflowing_offsets_errors_instead_of_wrapping() {
+        let entry = BlockTableEntry {
+            file_pos: u32::MAX,
+            compressed_size: 4,
+            uncompressed_size: 4,
+            flags: 0,
+        };
+        let result = extract_file(&[0u8; 16], u32::MAX, entry);
+        assert!(result.is_err());
     }
 }

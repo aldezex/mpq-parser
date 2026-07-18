@@ -50,10 +50,8 @@ mod user_data_offsets {
 
 mod header_offsets {
     pub const SIGNATURE: (usize, usize) = (0, 4);
-    pub const HEADER_SIZE: (usize, usize) = (4, 8);
     pub const ARCHIVE_SIZE: (usize, usize) = (8, 12);
     pub const FORMAT_VERSION: (usize, usize) = (12, 14);
-    pub const BLOCK_SIZE: (usize, usize) = (14, 16);
     pub const HASH_TABLE_POSITION: (usize, usize) = (16, 20);
     pub const BLOCK_TABLE_POSITION: (usize, usize) = (20, 24);
     pub const HASH_TABLE_SIZE: (usize, usize) = (24, 28);

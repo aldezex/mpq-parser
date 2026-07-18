@@ -37,7 +37,7 @@ impl HashTableEntry {
 pub fn parse_hash_table_entries(decrypted: &[u32]) -> Vec<HashTableEntry> {
     decrypted
         .chunks(4)
-        .map(|chunk| HashTableEntry::from_chunk(chunk))
+        .map(HashTableEntry::from_chunk)
         .collect()
 }
 
